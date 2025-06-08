@@ -1,43 +1,40 @@
 import { useState, useEffect } from "react";
-import { v4 as uuid } from "uuid";
 import jsPDF from "jspdf";
-import autoTable from "jspdf-autotable"; // Corrija este import!
+import autoTable from "jspdf-autotable";
 import FormularioConta from "./components/FormularioConta";
 import ListaContas from "./components/ListaContas";
 import ResumoFinanceiro from "./components/ResumoFinanceiro";
 
-export default function App() {
-  const [contas, setContas] = useState(() => {
-    const saved = localStorage.getItem("contas");
-    return saved ? JSON.parse(saved) : [];
-  });
+const API_URL = "http://localhost:5000/contas"; // Altere para o endereço da sua API
 
+export default function App() {
+  const [contas, setContas] = useState([]);
   const [mesSelecionado, setMesSelecionado] = useState(
     new Date().getMonth() + 1
-  ); // 1-12
+  );
   const [anoSelecionado, setAnoSelecionado] = useState(
     new Date().getFullYear()
   );
 
+  // Carregar contas da API ao iniciar ou ao alterar
   useEffect(() => {
-    localStorage.setItem("contas", JSON.stringify(contas));
-  }, [contas]);
+    fetch(API_URL)
+      .then((res) => res.json())
+      .then((data) => setContas(data))
+      .catch(() => setContas([]));
+  }, []);
 
-  const adicionarConta = ({
+  // Adicionar conta (parcelada ou não)
+  const adicionarConta = async ({
     descricao,
     valor,
     categoria,
     vencimento,
     parcelas,
   }) => {
-    const novasContas = [...contas];
     let mes = mesSelecionado;
     let ano = anoSelecionado;
-
-    // Calcula o valor de cada parcela (com precisão de centavos)
     const valorParcela = Math.round((Number(valor) / parcelas) * 100) / 100;
-
-    // Para ajustar possíveis diferenças de centavos na última parcela:
     let valorRestante = Number(valor);
 
     for (let i = 0; i < parcelas; i++) {
@@ -45,8 +42,6 @@ export default function App() {
         mes = 1;
         ano += 1;
       }
-
-      // Ajusta a data de vencimento para o mês/ano da parcela
       let vencimentoAjustado = vencimento;
       if (vencimento) {
         const data = new Date(vencimento);
@@ -54,40 +49,57 @@ export default function App() {
         data.setFullYear(ano);
         vencimentoAjustado = data.toISOString().slice(0, 10);
       }
-
-      // Última parcela recebe o valor restante para garantir o total correto
       const valorAtual =
         i === parcelas - 1
           ? Math.round(valorRestante * 100) / 100
           : valorParcela;
       valorRestante -= valorParcela;
 
-      novasContas.push({
-        id: uuid(),
-        descricao: `${descricao}${
-          parcelas > 1 ? ` (${i + 1}/${parcelas})` : ""
-        }`,
-        valor: valorAtual,
-        categoria,
-        vencimento: vencimentoAjustado,
-        pago: false,
-        mes,
-        ano,
+      await fetch(API_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          descricao: `${descricao}${
+            parcelas > 1 ? ` (${i + 1}/${parcelas})` : ""
+          }`,
+          valor: valorAtual,
+          categoria,
+          vencimento: vencimentoAjustado,
+          pago: false,
+          mes,
+          ano,
+        }),
       });
       mes += 1;
     }
-    setContas(novasContas);
+    // Recarrega as contas após adicionar
+    fetch(API_URL)
+      .then((res) => res.json())
+      .then((data) => setContas(data));
   };
 
-  const removerConta = (id) => {
+  const removerConta = async (id) => {
+    await fetch(`${API_URL}/${id}`, { method: "DELETE" });
     setContas(contas.filter((c) => c.id !== id));
   };
 
-  const alternarPago = (id) => {
+  const alternarPago = async (id) => {
+    const conta = contas.find((c) => c.id === id);
+    if (!conta) return;
+    await fetch(`${API_URL}/${id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...conta, pago: !conta.pago }),
+    });
     setContas(contas.map((c) => (c.id === id ? { ...c, pago: !c.pago } : c)));
   };
 
-  const editarConta = (contaEditada) => {
+  const editarConta = async (contaEditada) => {
+    await fetch(`${API_URL}/${contaEditada.id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(contaEditada),
+    });
     setContas(
       contas.map((c) =>
         c.id === contaEditada.id ? { ...c, ...contaEditada } : c
@@ -97,7 +109,6 @@ export default function App() {
 
   const gerarPDF = () => {
     const doc = new jsPDF();
-
     doc.setFontSize(18);
     doc.text("Relatório de Contas", 14, 15);
 
@@ -162,7 +173,7 @@ export default function App() {
           contas={contasFiltradas}
           onTogglePago={alternarPago}
           onRemover={removerConta}
-          onEditar={editarConta} // <-- Passe a função aqui!
+          onEditar={editarConta}
         />
         <button
           onClick={gerarPDF}
