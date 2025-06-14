@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import FormularioConta from "./components/FormularioConta";
@@ -24,97 +24,113 @@ export default function App() {
       .catch(() => setContas([]));
   }, []);
 
+  const contasFiltradas = contas.filter(
+    (c) => c.mes === mesSelecionado && c.ano === anoSelecionado
+  );
+
   // Adicionar conta (parcelada ou não)
-  const adicionarConta = async ({
-    descricao,
-    valor,
-    categoria,
-    vencimento,
-    parcelas,
-  }) => {
-    let mes = mesSelecionado;
-    let ano = anoSelecionado;
-    const valorParcela = Math.round((Number(valor) / parcelas) * 100) / 100;
-    let valorRestante = Number(valor);
+  const adicionarConta = useCallback(
+    async ({
+      descricao,
+      valor,
+      categoria,
+      vencimento,
+      parcelas,
+    }) => {
+      let mes = mesSelecionado;
+      let ano = anoSelecionado;
+      const valorParcela = Math.round((Number(valor) / parcelas) * 100) / 100;
+      let valorRestante = Number(valor);
 
-    for (let i = 0; i < parcelas; i++) {
-      if (mes > 12) {
-        mes = 1;
-        ano += 1;
-      }
-      let vencimentoAjustado = vencimento;
-      if (vencimento) {
-        const data = new Date(vencimento);
-        data.setMonth(mes - 1);
-        data.setFullYear(ano);
-        vencimentoAjustado = data.toISOString().slice(0, 10);
-      }
-      const valorAtual =
-        i === parcelas - 1
-          ? Math.round(valorRestante * 100) / 100
-          : valorParcela;
-      valorRestante -= valorParcela;
+      for (let i = 0; i < parcelas; i++) {
+        if (mes > 12) {
+          mes = 1;
+          ano += 1;
+        }
+        let vencimentoAjustado = vencimento;
+        if (vencimento) {
+          const data = new Date(vencimento);
+          data.setMonth(mes - 1);
+          data.setFullYear(ano);
+          vencimentoAjustado = data.toISOString().slice(0, 10);
+        }
+        const valorAtual =
+          i === parcelas - 1
+            ? Math.round(valorRestante * 100) / 100
+            : valorParcela;
+        valorRestante -= valorParcela;
 
-      await fetch(API_URL, {
-        method: "POST",
+        await fetch(API_URL, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            descricao: `${descricao}${
+              parcelas > 1 ? ` (${i + 1}/${parcelas})` : ""
+            }`,
+            valor: valorAtual,
+            categoria,
+            vencimento: vencimentoAjustado,
+            pago: false,
+            mes,
+            ano,
+          }),
+        });
+        mes += 1;
+      }
+      // Recarrega as contas após adicionar
+      fetch(API_URL)
+        .then((res) => res.json())
+        .then((data) => setContas(data));
+    },
+    [mesSelecionado, anoSelecionado, contas]
+  );
+
+  const removerConta = useCallback(
+    async (id) => {
+      await fetch(`${API_URL}/${id}`, { method: "DELETE" });
+      setContas(contas.filter((c) => c.id !== id));
+    },
+    [contas]
+  );
+
+  const alternarPago = useCallback(
+    async (id) => {
+      const conta = contas.find((c) => c.id === id);
+      if (!conta) return;
+      await fetch(`${API_URL}/${id}`, {
+        method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          descricao: `${descricao}${
-            parcelas > 1 ? ` (${i + 1}/${parcelas})` : ""
-          }`,
-          valor: valorAtual,
-          categoria,
-          vencimento: vencimentoAjustado,
-          pago: false,
-          mes,
-          ano,
-        }),
+        body: JSON.stringify({ ...conta, pago: !conta.pago }),
       });
-      mes += 1;
-    }
-    // Recarrega as contas após adicionar
-    fetch(API_URL)
-      .then((res) => res.json())
-      .then((data) => setContas(data));
-  };
+      setContas(contas.map((c) => (c.id === id ? { ...c, pago: !c.pago } : c)));
+    },
+    [contas]
+  );
 
-  const removerConta = async (id) => {
-    await fetch(`${API_URL}/${id}`, { method: "DELETE" });
-    setContas(contas.filter((c) => c.id !== id));
-  };
+  const editarConta = useCallback(
+    async (contaEditada) => {
+      await fetch(`${API_URL}/${contaEditada.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(contaEditada),
+      });
+      setContas(
+        contas.map((c) =>
+          c.id === contaEditada.id ? { ...c, ...contaEditada } : c
+        )
+      );
+    },
+    [contas]
+  );
 
-  const alternarPago = async (id) => {
-    const conta = contas.find((c) => c.id === id);
-    if (!conta) return;
-    await fetch(`${API_URL}/${id}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ...conta, pago: !conta.pago }),
-    });
-    setContas(contas.map((c) => (c.id === id ? { ...c, pago: !c.pago } : c)));
-  };
-
-  const editarConta = async (contaEditada) => {
-    await fetch(`${API_URL}/${contaEditada.id}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(contaEditada),
-    });
-    setContas(
-      contas.map((c) =>
-        c.id === contaEditada.id ? { ...c, ...contaEditada } : c
-      )
-    );
-  };
-
-  const gerarPDF = () => {
+  const gerarPDF = useCallback(() => {
     const doc = new jsPDF();
     doc.setFontSize(18);
     doc.text("Relatório de Contas", 14, 15);
 
     autoTable(doc, {
       head: [["Descrição", "Valor (R$)", "Categoria", "Vencimento", "Pago"]],
-      body: contas.map((c) => [
+      body: contasFiltradas.map((c) => [
         c.descricao,
         c.valor.toFixed(2),
         c.categoria,
@@ -129,11 +145,7 @@ export default function App() {
     });
 
     doc.save("relatorio-contas.pdf");
-  };
-
-  const contasFiltradas = contas.filter(
-    (c) => c.mes === mesSelecionado && c.ano === anoSelecionado
-  );
+  }, [contasFiltradas]);
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-100">
