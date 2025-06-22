@@ -70,3 +70,10 @@ def trocar_senha():
 def logout():
     session.clear()
     return jsonify({"message": "Logout realizado com sucesso!"})
+
+@auth_bp.route("/me", methods=["GET"])
+def me():
+    user_id = session.get("user_id")
+    if not user_id:
+        return jsonify({"user_id": None})
+    return jsonify({"user_id": user_id})

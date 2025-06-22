@@ -9,16 +9,19 @@ def get_contas():
     if not user_id:
         return jsonify([])
     contas = Conta.query.filter_by(usuario_id=user_id).all()
-    return jsonify([{
-        "id": c.id,
-        "descricao": c.descricao,
-        "valor": c.valor,
-        "categoria": c.categoria,
-        "vencimento": c.vencimento,
-        "pago": c.pago,
-        "mes": c.mes,
-        "ano": c.ano
-    } for c in contas])
+    return jsonify([
+        {
+            "id": c.id,
+            "descricao": c.descricao,
+            "valor": c.valor,
+            "categoria": c.categoria,
+            "vencimento": c.vencimento,
+            "pago": c.pago,
+            "mes": c.mes,
+            "ano": c.ano
+        }
+        for c in contas
+    ])
 
 @contas_bp.route("/contas", methods=["POST"])
 def add_conta():
