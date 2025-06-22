@@ -8,6 +8,7 @@ def create_app():
     app.config.from_object(Config)
     CORS(app, supports_credentials=True, origins=["https://financial-control-react-chi.vercel.app"])
     db.init_app(app)
+    Session(app)
 
     # Importar e registrar blueprints
     from routes.auth import auth_bp

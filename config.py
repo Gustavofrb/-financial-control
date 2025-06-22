@@ -11,3 +11,4 @@ class Config:
     # Cookies cross-domain para produção
     SESSION_COOKIE_SAMESITE = "None"
     SESSION_COOKIE_SECURE = os.getenv('FLASK_ENV') == "production"
+    SESSION_TYPE = "filesystem"
