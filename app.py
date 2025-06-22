@@ -2,6 +2,7 @@ from flask import Flask
 from flask_cors import CORS
 from config import Config
 from extensions import db
+from flask_session import Session
 
 def create_app():
     app = Flask(__name__)
